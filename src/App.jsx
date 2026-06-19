@@ -10,7 +10,7 @@ function ScreenStream() {
   const nextStartTimeRef = useRef(0);
 
   useEffect(() => {
-    // Conexión mediante el túnel de Cloudflare (HTTPS normal para handshake)
+    // Conexión mediante el túnel de Cloudflare
     const socket = io('https://parenting-allocated-prefer-surrey.trycloudflare.com', {
       forceNew: true,
       reconnectionAttempts: 5,
@@ -27,44 +27,43 @@ function ScreenStream() {
       setImageSrc(data.image);
     });
 
-    // 🔊 ESCUCHAR Y REPRODUCIR AUDIO EN TIEMPO REAL
+    // 🔊 ESCUCHAR Y REPRODUCIR AUDIO EN TIEMPO REAL (DINÁMICO)
     socket.on('audio_frame', (data) => {
       if (!audioEnabled || !audioContextRef.current) return;
 
       const audioContext = audioContextRef.current;
-      
-      // Convertir el ArrayBuffer recibido (Int16) a Float32 para la Web Audio API
+      const channels = data.channels || 2;
+      const sampleRate = data.sampleRate || 44100;
+
       const int16Array = new Int16Array(data.audio);
       const totalSamples = int16Array.length;
+      const samplesPerChannel = totalSamples / channels;
       
-      // Como es Estéreo (2 canales), dividimos las muestras para cada canal alternado (L / R)
-      const samplesPerChannel = totalSamples / 2;
-      const leftChannel = new Float32Array(samplesPerChannel);
-      const rightChannel = new Float32Array(samplesPerChannel);
+      // Creamos el buffer con la configuración exacta que mandó Python de forma nativa
+      const audioBuffer = audioContext.createBuffer(channels, samplesPerChannel, sampleRate);
 
-      for (let i = 0, j = 0; i < totalSamples; i += 2, j++) {
-        leftChannel[j] = int16Array[i] / 32768.0;      // Canal Izquierdo
-        rightChannel[j] = int16Array[i + 1] / 32768.0;  // Canal Derecho
+      // Separamos los canales dinámicamente sin importar la configuración del sistema (Mono/Estéreo)
+      for (let ch = 0; ch < channels; ch++) {
+        const channelData = audioBuffer.getChannelData(ch);
+        for (let i = 0; i < samplesPerChannel; i++) {
+          // Extraemos la muestra correspondiente a este canal (Interleaving)
+          channelData[i] = int16Array[i * channels + ch] / 32768.0;
+        }
       }
-
-      // Crear el Buffer de audio con 2 canales a 44100Hz
-      const audioBuffer = audioContext.createBuffer(2, samplesPerChannel, 44100);
-      audioBuffer.getChannelData(0).set(leftChannel);
-      audioBuffer.getChannelData(1).set(rightChannel);
 
       // Configurar el nodo de origen
       const source = audioContext.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(audioContext.destination);
 
-      // Sincronizar el tiempo exacto para que los fragmentos no se pisen ni dejen vacíos (evita clics)
+      // Sincronizar el tiempo exacto para evitar chasquidos o clics de audio
       const currentTime = audioContext.currentTime;
       if (nextStartTimeRef.current < currentTime) {
         nextStartTimeRef.current = currentTime;
       }
       
       source.start(nextStartTimeRef.current);
-      // Mover el puntero del tiempo hacia adelante basándose en la duración de este buffer
+      // Desplazar el puntero del reloj según la duración de este trozo de audio
       nextStartTimeRef.current += audioBuffer.duration;
     });
 
@@ -81,7 +80,7 @@ function ScreenStream() {
     };
   }, [audioEnabled]);
 
-  // Activa el contexto de audio en respuesta a un clic del usuario (Exigencia del Navegador)
+  // Activa el contexto de audio en respuesta a un clic del usuario (Exigencia de Privacidad de los Navegadores)
   const startAudio = () => {
     audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
     nextStartTimeRef.current = audioContextRef.current.currentTime;

@@ -10,7 +10,7 @@ function ScreenStream() {
   const nextStartTimeRef = useRef(0);
 
   useEffect(() => {
-    // Conexión mediante el túnel de Cloudflare
+    // Reemplaza con tu URL de Cloudflare actual si cambia
     const socket = io('https://parenting-allocated-prefer-surrey.trycloudflare.com', {
       forceNew: true,
       reconnectionAttempts: 5,
@@ -22,12 +22,12 @@ function ScreenStream() {
       console.log('Conectado al servidor de streaming');
     });
 
-    // 🖼️ ESCUCHAR IMÁGENES DE PANTALLA
+    // 🖼️ CAPTURA DE PANTALLA
     socket.on('screen_frame', (data) => {
       setImageSrc(data.image);
     });
 
-    // 🔊 ESCUCHAR Y REPRODUCIR AUDIO EN TIEMPO REAL (DINÁMICO)
+    // 🔊 REPRODUCCIÓN DE AUDIO DINÁMICA
     socket.on('audio_frame', (data) => {
       if (!audioEnabled || !audioContextRef.current) return;
 
@@ -39,31 +39,32 @@ function ScreenStream() {
       const totalSamples = int16Array.length;
       const samplesPerChannel = totalSamples / channels;
       
-      // Creamos el buffer con la configuración exacta que mandó Python de forma nativa
+      // Creamos un buffer adaptado a la tarjeta de sonido del backend
       const audioBuffer = audioContext.createBuffer(channels, samplesPerChannel, sampleRate);
 
-      // Separamos los canales dinámicamente sin importar la configuración del sistema (Mono/Estéreo)
+      // Distribuimos los datos binarios a cada canal (Izquierdo / Derecho)
       for (let ch = 0; ch < channels; ch++) {
-        const channelData = audioBuffer.getChannelData(ch);
-        for (let i = 0; i < samplesPerChannel; i++) {
-          // Extraemos la muestra correspondiente a este canal (Interleaving)
-          channelData[i] = int16Array[i * channels + ch] / 32768.0;
+        try {
+          const channelData = audioBuffer.getChannelData(ch);
+          for (let i = 0; i < samplesPerChannel; i++) {
+            channelData[i] = int16Array[i * channels + ch] / 32768.0;
+          }
+        } catch (err) {
+          // Si el navegador soporta menos canales físicos que la PC emisora, prevenimos un crash
+          break; 
         }
       }
 
-      // Configurar el nodo de origen
       const source = audioContext.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(audioContext.destination);
 
-      // Sincronizar el tiempo exacto para evitar chasquidos o clics de audio
       const currentTime = audioContext.currentTime;
       if (nextStartTimeRef.current < currentTime) {
         nextStartTimeRef.current = currentTime;
       }
       
       source.start(nextStartTimeRef.current);
-      // Desplazar el puntero del reloj según la duración de este trozo de audio
       nextStartTimeRef.current += audioBuffer.duration;
     });
 
@@ -80,7 +81,6 @@ function ScreenStream() {
     };
   }, [audioEnabled]);
 
-  // Activa el contexto de audio en respuesta a un clic del usuario (Exigencia de Privacidad de los Navegadores)
   const startAudio = () => {
     audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
     nextStartTimeRef.current = audioContextRef.current.currentTime;
@@ -95,7 +95,6 @@ function ScreenStream() {
         Estado: {isConnected ? <span style={{ color: '#4CAF50', fontWeight: 'bold' }}>● Transmitiendo</span> : <span style={{ color: '#f44336', fontWeight: 'bold' }}>● Desconectado</span>}
       </div>
 
-      {/* Control del botón de Audio */}
       {!audioEnabled && isConnected && (
         <button 
           onClick={startAudio} 
@@ -104,7 +103,7 @@ function ScreenStream() {
           🔊 Activar Sonido del Streaming
         </button>
       )}
-      {audioEnabled && <p style={{ color: '#4CAF50', fontWeight: 'bold', marginBottom: '20px' }}>🔊 Sonido de la PC Activado</p>}
+      {audioEnabled && <p style={{ color: '#4CAF50', fontWeight: 'bold', marginBottom: '20px' }}>🔊 Audio de la PC Activado</p>}
       
       <div style={{ maxWidth: '90%', margin: '0 auto', border: '4px solid #444', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#000', boxShadow: '0px 10px 25px rgba(0,0,0,0.5)' }}>
         {imageSrc ? (

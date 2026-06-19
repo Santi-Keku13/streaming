@@ -8,9 +8,11 @@ function ScreenStream() {
 useEffect(() => {
     // ==== COMENTARIO CORREGIDO ====
     // Conectar al servidor de Python
-    const socket = io('wss://parenting-allocated-prefer-surrey.trycloudflare.com', {
-      transports: ['websocket'],
-      forceNew: true // Le ayuda a React a limpiar conexiones viejas fallidas
+    const socket = io('https://parenting-allocated-prefer-surrey.trycloudflare.com', {
+      // Quitamos la restricción de websocket para permitir que Socket.IO decida el mejor método
+      forceNew: true,
+      reconnectionAttempts: 5,
+      timeout: 10000
     });
 
     socket.on('connect', () => {
